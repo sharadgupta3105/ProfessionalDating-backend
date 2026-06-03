@@ -1,0 +1,29 @@
+{
+  "name": "promatch-backend",
+  "version": "1.0.0",
+  "description": "ProMatch dating app API - auth, users, matches, chat",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "init-db": "node src/db/init.js",
+    "seed": "node src/db/seed.js",
+    "seed-test-accounts": "node src/db/seedTestAccounts.js",
+    "seed-india": "node src/db/seedIndiaAccounts.js",
+    "seed-india-60": "node src/db/seedIndiaLargeAccounts.js",
+    "seed-india-30": "node src/db/seedIndia30Accounts.js",
+    "reset-dev-for-chat": "node src/db/resetDevForChat.js",
+    "reset-and-seed": "node src/db/resetAndSeedAllFeatures.js"
+  },
+  "engines": {
+    "node": "20.x"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1",
+    "socket.io": "^4.8.3"
+  }
+}
