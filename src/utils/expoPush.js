@@ -40,7 +40,7 @@ async function sendExpoPush({ to, title, body, data }) {
   const message = {
     to,
     sound: 'default',
-    title: String(title || 'Ethos').slice(0, 120),
+    title: String(title || 'MatchedIn').slice(0, 120),
     body: String(body || '').slice(0, 200),
     data: data && typeof data === 'object' ? data : {},
     priority: 'high',

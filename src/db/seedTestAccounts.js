@@ -82,7 +82,7 @@ const TEST_ACCOUNTS = [
     age: 32,
     gender: 'Male',
     profession: 'Software Engineer',
-    company: 'ProMatch QA',
+    company: 'LinkedUp QA',
     city: 'Bengaluru',
     bio: 'QA account — interested in everyone, Bengaluru.',
     photo_url: IMG.m1,
@@ -351,7 +351,7 @@ async function insertTestUser(u) {
       ?, ?, ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, NOW(), NOW()
+      ?, ?, NOW(), NOW()
     )`,
     [
       u.id,

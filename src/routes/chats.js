@@ -7,6 +7,7 @@ const { randomUUID } = require('crypto');
 const { resolveConversationId } = require('../utils/conversation');
 const { sendNewChatMessagePush } = require('../utils/expoPush');
 const { recipientLikelyInForeground } = require('../utils/appPresence');
+const { getBlockedUserIds, isBlockedEitherWay } = require('../utils/blocks');
 
 router.use(authMiddleware);
 
@@ -39,9 +40,11 @@ router.get('/', async (req, res, next) => {
       [req.userId, req.userId],
     );
 
+    const blocked = await getBlockedUserIds(req.userId);
     const list = [];
     for (const c of convs) {
       const otherId = c.user_id_1 === req.userId ? c.user_id_2 : c.user_id_1;
+      if (blocked.has(otherId)) continue;
       const other = await getOne('SELECT * FROM users WHERE id = ?', [otherId]);
       const lastMsg = await getOne(
         'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1',
@@ -106,6 +109,10 @@ router.get('/:chatId/messages', async (req, res, next) => {
     if (conv.user_id_1 !== req.userId && conv.user_id_2 !== req.userId) {
       return res.status(403).json({ message: 'Not in this conversation' });
     }
+    const otherId = conv.user_id_1 === req.userId ? conv.user_id_2 : conv.user_id_1;
+    if (await isBlockedEitherWay(req.userId, otherId)) {
+      return res.status(403).json({ message: 'Cannot access this conversation' });
+    }
     const rows = await all(
       'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC',
       [conv.id],
@@ -135,6 +142,10 @@ router.post('/:chatId/messages', async (req, res, next) => {
     }
     if (conv.user_id_1 !== req.userId && conv.user_id_2 !== req.userId) {
       return res.status(403).json({ message: 'Not in this conversation' });
+    }
+    const otherId = conv.user_id_1 === req.userId ? conv.user_id_2 : conv.user_id_1;
+    if (await isBlockedEitherWay(req.userId, otherId)) {
+      return res.status(403).json({ message: 'Cannot message this user' });
     }
     const id = randomUUID();
     await run('INSERT INTO messages (id, conversation_id, sender_id, text) VALUES (?, ?, ?, ?)', [

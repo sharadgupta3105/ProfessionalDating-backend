@@ -4,6 +4,8 @@ const { getOne, all, run, query } = require('../db/connection');
 const { authMiddleware } = require('../middleware/auth');
 const { toUserJson } = require('../utils/userJson');
 const { APP_TIMEZONE } = require('../config/region');
+const { getBlockedUserIds, isBlockedEitherWay } = require('../utils/blocks');
+const { removeMatchAndChat, ensurePass } = require('../utils/matchCleanup');
 
 router.use(authMiddleware);
 
@@ -110,10 +112,12 @@ router.get('/recommendations', async (req, res, next) => {
     );
     const liked = await all('SELECT target_user_id FROM likes WHERE user_id = ?', [req.userId]);
     const passed = await all('SELECT target_user_id FROM passes WHERE user_id = ?', [req.userId]);
+    const blocked = await getBlockedUserIds(req.userId);
     const exclude = new Set([
       req.userId,
       ...liked.map((r) => r.target_user_id),
       ...passed.map((r) => r.target_user_id),
+      ...blocked,
     ]);
     let rows = await all('SELECT * FROM users WHERE id != ?', [req.userId]);
     rows = rows.filter((r) => !exclude.has(r.id));
@@ -426,6 +430,9 @@ router.post('/like', async (req, res, next) => {
     const { userId: targetUserId } = req.body;
     if (!targetUserId) return res.status(400).json({ message: 'userId required' });
     if (targetUserId === req.userId) return res.status(400).json({ message: 'Cannot like yourself' });
+    if (await isBlockedEitherWay(req.userId, targetUserId)) {
+      return res.status(403).json({ message: 'Cannot interact with this user' });
+    }
 
     const limit = await checkDailySwipeLimit(req.userId);
     if (limit.remaining <= 0) {
@@ -498,6 +505,9 @@ router.post('/super-like', async (req, res, next) => {
     const { userId: targetUserId } = req.body;
     if (!targetUserId) return res.status(400).json({ message: 'userId required' });
     if (targetUserId === req.userId) return res.status(400).json({ message: 'Cannot super-like yourself' });
+    if (await isBlockedEitherWay(req.userId, targetUserId)) {
+      return res.status(403).json({ message: 'Cannot interact with this user' });
+    }
 
     const limit = await checkDailySwipeLimit(req.userId);
     if (limit.remaining <= 0) {
@@ -546,6 +556,7 @@ router.post('/super-like', async (req, res, next) => {
 // GET /matches - mutual matches
 router.get('/', async (req, res, next) => {
   try {
+    const blocked = await getBlockedUserIds(req.userId);
     const rows = await all(
       `
       SELECT u.* FROM users u
@@ -555,7 +566,26 @@ router.get('/', async (req, res, next) => {
     `,
       [req.userId, req.userId, req.userId],
     );
-    res.json(rows.map(toUserJson));
+    res.json(rows.filter((r) => !blocked.has(r.id)).map(toUserJson));
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /matches/:targetUserId/unmatch — remove match + chat; hide from discover
+router.post('/:targetUserId/unmatch', async (req, res, next) => {
+  try {
+    const targetUserId = req.params.targetUserId;
+    if (!targetUserId) return res.status(400).json({ message: 'targetUserId required' });
+    if (targetUserId === req.userId) return res.status(400).json({ message: 'Invalid user' });
+
+    const other = await getOne('SELECT id FROM users WHERE id = ?', [targetUserId]);
+    if (!other) return res.status(404).json({ message: 'User not found' });
+
+    await removeMatchAndChat(req.userId, targetUserId);
+    await ensurePass(req.userId, targetUserId);
+
+    res.json({ success: true, unmatch: true });
   } catch (e) {
     next(e);
   }

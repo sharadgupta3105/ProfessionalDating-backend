@@ -2,9 +2,19 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const router = express.Router();
-const { getOne, run, query } = require('../db/connection');
+const { getOne, run, all } = require('../db/connection');
 const { authMiddleware } = require('../middleware/auth');
 const { toUserJson } = require('../utils/userJson');
+const { blockUser, isBlockedEitherWay } = require('../utils/blocks');
+const { removeMatchAndChat, ensurePass } = require('../utils/matchCleanup');
+
+const REPORT_REASONS = new Set([
+  'Harassment',
+  'Spam',
+  'Fake profile',
+  'Inappropriate content',
+  'Other',
+]);
 
 router.use(authMiddleware);
 
@@ -237,7 +247,7 @@ router.put('/me/photos', async (req, res, next) => {
 router.delete('/me', async (req, res, next) => {
   try {
     const id = req.userId;
-    const convRows = await query(
+    const convRows = await all(
       'SELECT id FROM conversations WHERE user_id_1 = ? OR user_id_2 = ?',
       [id, id],
     );
@@ -249,6 +259,8 @@ router.delete('/me', async (req, res, next) => {
     await run('DELETE FROM matches WHERE user_id_1 = ? OR user_id_2 = ?', [id, id]);
     await run('DELETE FROM likes WHERE user_id = ? OR target_user_id = ?', [id, id]);
     await run('DELETE FROM passes WHERE user_id = ? OR target_user_id = ?', [id, id]);
+    await run('DELETE FROM blocks WHERE blocker_id = ? OR blocked_id = ?', [id, id]);
+    await run('DELETE FROM user_reports WHERE reporter_id = ? OR reported_id = ?', [id, id]);
     const user = await getOne('SELECT email FROM users WHERE id = ?', [id]);
     if (user?.email) {
       await run('DELETE FROM otp_codes WHERE email = ?', [user.email]);
@@ -260,10 +272,63 @@ router.delete('/me', async (req, res, next) => {
   }
 });
 
+// POST /users/:userId/block — block user, remove match/chat, hide from discover
+router.post('/:userId/block', async (req, res, next) => {
+  try {
+    const targetUserId = req.params.userId;
+    if (targetUserId === req.userId) return res.status(400).json({ message: 'Cannot block yourself' });
+
+    const other = await getOne('SELECT id FROM users WHERE id = ?', [targetUserId]);
+    if (!other) return res.status(404).json({ message: 'User not found' });
+
+    await blockUser(req.userId, targetUserId);
+    await removeMatchAndChat(req.userId, targetUserId);
+    await ensurePass(req.userId, targetUserId);
+
+    res.json({ success: true, blocked: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /users/:userId/report — report user (optional details)
+router.post('/:userId/report', async (req, res, next) => {
+  try {
+    const targetUserId = req.params.userId;
+    if (targetUserId === req.userId) return res.status(400).json({ message: 'Cannot report yourself' });
+
+    const other = await getOne('SELECT id FROM users WHERE id = ?', [targetUserId]);
+    if (!other) return res.status(404).json({ message: 'User not found' });
+
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    if (!REPORT_REASONS.has(reason)) {
+      return res.status(400).json({ message: 'Invalid report reason' });
+    }
+
+    let details = req.body?.details;
+    if (details != null && typeof details !== 'string') {
+      return res.status(400).json({ message: 'details must be a string' });
+    }
+    details = details ? String(details).trim().slice(0, 2000) : null;
+
+    await run(
+      'INSERT INTO user_reports (reporter_id, reported_id, reason, details) VALUES (?, ?, ?, ?)',
+      [req.userId, targetUserId, reason, details],
+    );
+
+    res.status(201).json({ success: true, reported: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/:userId', async (req, res, next) => {
   try {
     const row = await getOne('SELECT * FROM users WHERE id = ?', [req.params.userId]);
     if (!row) return res.status(404).json({ message: 'User not found' });
+    if (await isBlockedEitherWay(req.userId, req.params.userId)) {
+      return res.status(404).json({ message: 'User not found' });
+    }
     res.json(toUserJson(row));
   } catch (e) {
     next(e);

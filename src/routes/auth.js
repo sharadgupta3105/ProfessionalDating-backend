@@ -5,6 +5,12 @@ const { getOne, run } = require("../db/connection");
 const { signToken, authMiddleware, JWT_SECRET } = require("../middleware/auth");
 const { toUserJson } = require("../utils/userJson");
 const { randomUUID } = require("crypto");
+const { isResendConfigured, sendLoginOtpEmail } = require("../services/emailOtp");
+const {
+  isDemoLoginEmail,
+  getDemoLoginEmail,
+  getDemoLoginOtp,
+} = require("../config/demoAccount");
 
 /** Prevent open-redirect abuse: only allow redirect URIs used by our mobile app + Expo dev. */
 function isAllowedLinkedInRedirectUri(uri) {
@@ -33,7 +39,8 @@ function isAllowedLinkedInRedirectUri(uri) {
 }
 
 function linkedinOAuthCallbackUrl() {
-  return process.env.LINKEDIN_OAUTH_CALLBACK_URL?.trim() || "";
+  const raw = process.env.LINKEDIN_OAUTH_CALLBACK_URL?.trim() || "";
+  return raw.replace(/\/$/, "");
 }
 
 function isAllowedAppLinkedInReturnUrl(url) {
@@ -140,29 +147,62 @@ router.post("/login", async (req, res, next) => {
     if (!email || typeof email !== "string") {
       return res.status(400).json({ message: "Email is required" });
     }
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ message: "Enter a valid email address" });
+    }
+
+    const isDemo = isDemoLoginEmail(normalizedEmail);
     const fixedOtp = process.env.OTP_FIXED_CODE?.trim();
-    const code =
-      fixedOtp && /^\d{4,8}$/.test(fixedOtp)
-        ? fixedOtp
-        : process.env.NODE_ENV === "development"
-          ? "123456"
-          : generateOtp();
+    const useFixedOtp = !isDemo && fixedOtp && /^\d{4,8}$/.test(fixedOtp);
+    const resendOn = isResendConfigured();
+    const isDev = process.env.NODE_ENV !== "production";
+
+    let code;
+    let message;
+    let emailed = false;
+    let demo = false;
+
+    if (isDemo) {
+      code = getDemoLoginOtp();
+      demo = true;
+      message = `Demo account — use OTP ${code} (no email sent).`;
+    } else if (useFixedOtp) {
+      code = fixedOtp;
+      message = `OTP ready. Use code ${code} (fixed test mode, no email).`;
+    } else if (resendOn) {
+      code = generateOtp();
+      await sendLoginOtpEmail({ to: normalizedEmail, code });
+      emailed = true;
+      message = "We sent a 6-digit code to your email. Check your inbox and spam folder.";
+    } else if (isDev) {
+      code = "123456";
+      message = "Dev mode: use OTP 123456 (set RESEND_API_KEY to send real emails).";
+      // eslint-disable-next-line no-console
+      console.log(`[otp] Dev code for ${normalizedEmail}: ${code}`);
+    } else {
+      const err = new Error(
+        "Email sign-in is not configured. Set RESEND_API_KEY on the server. See backend/OTP_EMAIL_SETUP.md.",
+      );
+      err.status = 503;
+      throw err;
+    }
+
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    await run("DELETE FROM otp_codes WHERE email = ?", [
-      email.trim().toLowerCase(),
-    ]);
+    await run("DELETE FROM otp_codes WHERE email = ?", [normalizedEmail]);
     await run("INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)", [
-      email.trim().toLowerCase(),
+      normalizedEmail,
       code,
       expiresAt,
     ]);
-    const message =
-      fixedOtp && /^\d{4,8}$/.test(fixedOtp)
-        ? "OTP sent. Fixed code mode enabled."
-        : process.env.NODE_ENV === "development"
-          ? "OTP sent. In dev use code 123456."
-          : "OTP sent. Check your email for the code.";
-    res.json({ success: true, message });
+
+    res.json({
+      success: true,
+      message,
+      emailed,
+      demo,
+      ...(demo ? { demoEmail: getDemoLoginEmail() } : {}),
+    });
   } catch (e) {
     next(e);
   }
@@ -298,6 +338,21 @@ async function exchangeLinkedInAndUpsertUser(code, redirectUriTrimmed) {
   }
   return user;
 }
+
+/** Public: exact redirect_uri registered in LinkedIn Developer Portal (for debugging). */
+router.get("/linkedin/redirect-uri", (req, res) => {
+  const redirectUri = linkedinOAuthCallbackUrl();
+  if (!redirectUri) {
+    return res.status(503).json({
+      message:
+        "Set LINKEDIN_OAUTH_CALLBACK_URL on the API (e.g. https://YOUR_HOST/auth/linkedin/callback).",
+    });
+  }
+  res.json({
+    redirectUri,
+    hint: "Add this exact string to LinkedIn → Auth → Authorized redirect URLs (no trailing slash).",
+  });
+});
 
 router.post("/linkedin/start", (req, res) => {
   try {

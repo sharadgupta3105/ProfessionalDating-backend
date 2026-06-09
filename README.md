@@ -1,6 +1,6 @@
-# ProMatch Backend
+# LinkedUp Backend
 
-Node.js + Express API for the ProMatch dating app. Uses **PostgreSQL** (recommended: [Supabase](https://supabase.com) free tier) via **`DATABASE_URL`** and **JWT** for auth.
+Node.js + Express API for the LinkedUp dating app. Uses **PostgreSQL** (recommended: [Supabase](https://supabase.com) free tier) via **`DATABASE_URL`** and **JWT** for auth.
 
 ---
 
@@ -64,9 +64,9 @@ PORT=5000
 NODE_ENV=development
 JWT_SECRET=your-super-secret-key-change-in-production
 FRONTEND_URL=http://localhost:8081
-# Optional: Resend for OTP emails
+# Email OTP (Resend) — see OTP_EMAIL_SETUP.md
 # RESEND_API_KEY=re_xxxxx
-# OTP_FROM_EMAIL=onboarding@resend.dev
+# OTP_FROM_EMAIL=LinkedUp <onboarding@resend.dev>
 ```
 
 - **DATABASE_URL** – Required. Supabase URI from the dashboard (pooler or direct connection).

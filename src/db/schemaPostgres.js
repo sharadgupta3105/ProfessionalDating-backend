@@ -105,4 +105,24 @@ module.exports = [
     PRIMARY KEY (conversation_id, user_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_conv_reads_user ON conversation_reads(user_id)`,
+
+  `CREATE TABLE IF NOT EXISTS blocks (
+    id BIGSERIAL PRIMARY KEY,
+    blocker_id TEXT NOT NULL REFERENCES users(id),
+    blocked_id TEXT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(blocker_id, blocked_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_blocks_blocker ON blocks(blocker_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks(blocked_id)`,
+
+  `CREATE TABLE IF NOT EXISTS user_reports (
+    id BIGSERIAL PRIMARY KEY,
+    reporter_id TEXT NOT NULL REFERENCES users(id),
+    reported_id TEXT NOT NULL REFERENCES users(id),
+    reason TEXT NOT NULL,
+    details TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_reports_reported ON user_reports(reported_id)`,
 ];

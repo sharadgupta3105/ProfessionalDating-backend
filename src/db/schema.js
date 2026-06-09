@@ -1,5 +1,5 @@
 /**
- * ProMatch DB schema (SQLite)
+ * LinkedUp DB schema (SQLite)
  * Run via: npm run init-db
  */
 

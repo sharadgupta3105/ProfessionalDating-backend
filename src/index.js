@@ -39,6 +39,21 @@ app.use('/chats', chatsRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
+app.get('/health/db', async (req, res) => {
+  try {
+    const { getPool } = require('./db/connection');
+    await getPool().query('SELECT 1');
+    res.json({ ok: true, database: 'connected' });
+  } catch (e) {
+    res.status(503).json({
+      ok: false,
+      database: 'error',
+      message: e?.message || 'Database connection failed',
+      hint: 'See backend/SUPABASE_DATABASE_FIX.md',
+    });
+  }
+});
+
 app.get('/', (req, res) => {
   res.json({
     ok: true,
@@ -60,6 +75,19 @@ const io = new Server(server, {
 app.set('io', io);
 attachChatSocket(io);
 
+async function maybeSeedDemoAccount() {
+  if (process.env.SEED_DEMO_ACCOUNT !== '1') return;
+  try {
+    const { seedDemoAccount } = require('./db/seedDemoAccount');
+    await seedDemoAccount();
+    // eslint-disable-next-line no-console
+    console.log('[boot] SEED_DEMO_ACCOUNT: demo user refreshed');
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[boot] SEED_DEMO_ACCOUNT failed:', err.message || err);
+  }
+}
+
 async function maybeSeedPromatchTestAccounts() {
   if (process.env.SEED_PROMATCH_TEST_ACCOUNTS !== '1') return;
   try {
@@ -75,10 +103,11 @@ async function maybeSeedPromatchTestAccounts() {
 
 async function start() {
   await initDb();
+  await maybeSeedDemoAccount();
   await maybeSeedPromatchTestAccounts();
   server.listen(PORT, '0.0.0.0', () => {
     // eslint-disable-next-line no-console
-    console.log(`ProMatch API + Socket.io at http://localhost:${PORT}`);
+    console.log(`LinkedUp API + Socket.io at http://localhost:${PORT}`);
     // eslint-disable-next-line no-console
     console.log(`CORS / socket origins: ${allowAllOrigins ? '*' : corsOrigins.join(', ')}`);
   });
