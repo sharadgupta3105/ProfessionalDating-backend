@@ -68,6 +68,9 @@ app.use(errorHandler);
 const server = http.createServer(app);
 const io = new Server(server, {
   path: '/socket.io',
+  // Detect dead clients faster so push is not skipped after the app is killed.
+  pingInterval: 10_000,
+  pingTimeout: 20_000,
   cors: allowAllOrigins
     ? { origin: '*', credentials: false }
     : { origin: corsOrigins, credentials: true },

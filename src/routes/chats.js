@@ -6,7 +6,8 @@ const { toUserJson } = require('../utils/userJson');
 const { randomUUID } = require('crypto');
 const { resolveConversationId } = require('../utils/conversation');
 const { sendNewChatMessagePush } = require('../utils/expoPush');
-const { recipientLikelyInForeground } = require('../utils/appPresence');
+const { shouldSkipRemotePush } = require('../utils/appPresence');
+const { isUserSocketConnected } = require('../socket/chatSocket');
 const { getBlockedUserIds, isBlockedEitherWay } = require('../utils/blocks');
 
 router.use(authMiddleware);
@@ -186,9 +187,13 @@ router.post('/:chatId/messages', async (req, res, next) => {
       });
     }
 
-    const skipPushForeground = recipientLikelyInForeground(recipientRow);
+    const skipPushForeground = shouldSkipRemotePush(
+      recipientRow,
+      recipientId,
+      isUserSocketConnected,
+    );
     if (process.env.DEBUG_PUSH === '1' && skipPushForeground) {
-      console.log('[push] skip: app appears open (recent foreground presence)', { recipientId });
+      console.log('[push] skip: app open with live socket', { recipientId });
     }
 
     if (recipientRow?.expo_push_token && !skipPushForeground) {

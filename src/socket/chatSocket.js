@@ -1,6 +1,25 @@
 const { verifyToken } = require('../middleware/auth');
-const { getOne } = require('../db/connection');
+const { getOne, run } = require('../db/connection');
 const { resolveConversationId } = require('../utils/conversation');
+
+/** userId → active Socket.io connection count (multi-device safe). */
+const connectionCounts = new Map();
+
+function incrementUserConnection(userId) {
+  const key = String(userId);
+  connectionCounts.set(key, (connectionCounts.get(key) || 0) + 1);
+}
+
+function decrementUserConnection(userId) {
+  const key = String(userId);
+  const next = (connectionCounts.get(key) || 0) - 1;
+  if (next <= 0) connectionCounts.delete(key);
+  else connectionCounts.set(key, next);
+}
+
+function isUserSocketConnected(userId) {
+  return (connectionCounts.get(String(userId)) || 0) > 0;
+}
 
 /**
  * Realtime chat: clients join `conv:<id>` after JWT auth; REST POST also emits `message:new` here.
@@ -18,6 +37,17 @@ function attachChatSocket(io) {
 
   io.on('connection', (socket) => {
     const userId = socket.data.userId;
+    incrementUserConnection(userId);
+    socket.on('disconnect', () => {
+      decrementUserConnection(userId);
+      if (!isUserSocketConnected(userId)) {
+        const iso = new Date().toISOString();
+        run(
+          'UPDATE users SET app_in_foreground = 0, app_presence_updated_at = ?, updated_at = NOW() WHERE id = ?',
+          [iso, userId],
+        ).catch(() => {});
+      }
+    });
     socket.join(`user:${userId}`);
 
     socket.on('join_conversation', async (chatId, ack) => {
@@ -79,4 +109,4 @@ function attachChatSocket(io) {
   });
 }
 
-module.exports = { attachChatSocket };
+module.exports = { attachChatSocket, isUserSocketConnected };

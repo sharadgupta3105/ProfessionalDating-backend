@@ -3,31 +3,15 @@ const router = express.Router();
 const { getOne, all, run, query } = require('../db/connection');
 const { authMiddleware } = require('../middleware/auth');
 const { toUserJson } = require('../utils/userJson');
-const { APP_TIMEZONE } = require('../config/region');
 const { getBlockedUserIds, isBlockedEitherWay } = require('../utils/blocks');
 const { removeMatchAndChat, ensurePass } = require('../utils/matchCleanup');
+const { notifyUserOfNewMatch } = require('../utils/matchNotify');
+const { checkDailySwipeLimit } = require('../utils/dailySwipeLimit');
 
 router.use(authMiddleware);
 
-const MAX_DAILY_SWIPES = 10;
-
-/** Same calendar day in app timezone (India: Asia/Kolkata). */
-async function checkDailySwipeLimit(userId) {
-  const tz = APP_TIMEZONE.replace(/'/g, "''");
-  const likeRow = await getOne(
-    `SELECT COUNT(*)::int AS c FROM likes WHERE user_id = ? AND (created_at AT TIME ZONE '${tz}')::date = (NOW() AT TIME ZONE '${tz}')::date`,
-    [userId],
-  );
-  const passRow = await getOne(
-    `SELECT COUNT(*)::int AS c FROM passes WHERE user_id = ? AND (created_at AT TIME ZONE '${tz}')::date = (NOW() AT TIME ZONE '${tz}')::date`,
-    [userId],
-  );
-  const likeCount = Number(likeRow?.c ?? 0);
-  const passCount = Number(passRow?.c ?? 0);
-  const total = likeCount + passCount;
-  const remaining = Math.max(0, MAX_DAILY_SWIPES - total);
-  const resetAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  return { total, remaining, resetAt };
+async function swipeLimitFor(userId) {
+  return checkDailySwipeLimit(userId, getOne);
 }
 
 // Map "interested in" labels to DB gender values
@@ -100,7 +84,7 @@ function overlapRatio(viewerList, candidateList) {
 // plus optional query params from Dating Preferences.
 router.get('/recommendations', async (req, res, next) => {
   try {
-    const limit = await checkDailySwipeLimit(req.userId);
+    const limit = await swipeLimitFor(req.userId);
     if (limit.remaining <= 0) {
       return res
         .status(429)
@@ -402,7 +386,7 @@ router.get('/recommendations', async (req, res, next) => {
 // GET /matches/swipe-limit-status - current user's daily swipe usage + block status
 router.get('/swipe-limit-status', async (req, res, next) => {
   try {
-    const limit = await checkDailySwipeLimit(req.userId);
+    const limit = await swipeLimitFor(req.userId);
     res.json({
       total: limit.total,
       remaining: limit.remaining,
@@ -434,7 +418,7 @@ router.post('/like', async (req, res, next) => {
       return res.status(403).json({ message: 'Cannot interact with this user' });
     }
 
-    const limit = await checkDailySwipeLimit(req.userId);
+    const limit = await swipeLimitFor(req.userId);
     if (limit.remaining <= 0) {
       return res
         .status(429)
@@ -465,10 +449,7 @@ router.post('/like', async (req, res, next) => {
       );
       isMatch = true;
       if (insMatch.rowCount > 0) {
-        const io = req.app.get('io');
-        if (io) {
-          io.to(`user:${targetUserId}`).emit('match:new', { fromUserId: req.userId });
-        }
+        await notifyUserOfNewMatch(req, req.userId, targetUserId);
       }
     }
     res.json({ success: true, isMatch });
@@ -482,7 +463,7 @@ router.post('/pass', async (req, res, next) => {
   try {
     const { userId: targetUserId } = req.body;
     if (!targetUserId) return res.status(400).json({ message: 'userId required' });
-    const limit = await checkDailySwipeLimit(req.userId);
+    const limit = await swipeLimitFor(req.userId);
     if (limit.remaining <= 0) {
       return res
         .status(429)
@@ -509,7 +490,7 @@ router.post('/super-like', async (req, res, next) => {
       return res.status(403).json({ message: 'Cannot interact with this user' });
     }
 
-    const limit = await checkDailySwipeLimit(req.userId);
+    const limit = await swipeLimitFor(req.userId);
     if (limit.remaining <= 0) {
       return res
         .status(429)
@@ -541,10 +522,7 @@ router.post('/super-like', async (req, res, next) => {
       );
       isMatch = true;
       if (insMatch.rowCount > 0) {
-        const io = req.app.get('io');
-        if (io) {
-          io.to(`user:${targetUserId}`).emit('match:new', { fromUserId: req.userId });
-        }
+        await notifyUserOfNewMatch(req, req.userId, targetUserId);
       }
     }
     res.json({ success: true, isMatch });

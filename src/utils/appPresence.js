@@ -1,8 +1,8 @@
-/** Skip remote push if we believe the recipient has the app open (fresh presence ping). */
-const MAX_PRESENCE_AGE_MS = 75_000;
+/** Skip remote push only when presence pings are fresh (heartbeat is ~25s). */
+const MAX_PRESENCE_AGE_MS = 35_000;
 
 function recipientLikelyInForeground(row) {
-  if (!row || row.app_in_foreground !== 1) return false;
+  if (!row || Number(row.app_in_foreground) !== 1) return false;
   const raw = row.app_presence_updated_at;
   if (!raw || typeof raw !== 'string') return false;
   const t = Date.parse(raw);
@@ -11,4 +11,13 @@ function recipientLikelyInForeground(row) {
   return age >= 0 && age < MAX_PRESENCE_AGE_MS;
 }
 
-module.exports = { recipientLikelyInForeground, MAX_PRESENCE_AGE_MS };
+/** Skip push only when the app is actively open *and* still connected over Socket.io. */
+function shouldSkipRemotePush(recipientRow, recipientId, isSocketConnected) {
+  return recipientLikelyInForeground(recipientRow) && Boolean(isSocketConnected(recipientId));
+}
+
+module.exports = {
+  recipientLikelyInForeground,
+  shouldSkipRemotePush,
+  MAX_PRESENCE_AGE_MS,
+};

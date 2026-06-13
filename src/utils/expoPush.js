@@ -35,15 +35,25 @@ function assertPushTicketsOk(json) {
 async function sendExpoPush({ to, title, body, data }) {
   if (!isExpoPushToken(to)) return { skipped: true };
 
-  // Omit channelId: Android-only; if the channel is missing on device, Expo drops the notification.
-  // Omitting uses the default FCM behavior. iOS ignores channelId anyway.
+  const stringData = {};
+  if (data && typeof data === 'object') {
+    for (const [key, value] of Object.entries(data)) {
+      stringData[key] = value == null ? '' : String(value);
+    }
+  }
+
   const message = {
     to,
     sound: 'default',
     title: String(title || 'MatchedIn').slice(0, 120),
     body: String(body || '').slice(0, 200),
-    data: data && typeof data === 'object' ? data : {},
+    data: stringData,
     priority: 'high',
+    channelId: 'messages',
+    android: {
+      channelId: 'messages',
+      priority: 'high',
+    },
   };
 
   const headers = {
@@ -95,4 +105,23 @@ function sendNewChatMessagePush({ expoPushToken, senderName, textPreview, conver
   });
 }
 
-module.exports = { sendExpoPush, sendNewChatMessagePush, isExpoPushToken };
+/**
+ * Notify recipient of a new mutual match (fire-and-forget friendly).
+ */
+function sendNewMatchPush({ expoPushToken, matcherName, matchUserId, matchPhoto }) {
+  if (!isExpoPushToken(expoPushToken)) return Promise.resolve({ skipped: true });
+  const name = (matcherName || 'Someone').trim() || 'Someone';
+  return sendExpoPush({
+    to: expoPushToken,
+    title: "It's a match!",
+    body: `You and ${name} liked each other. Say hello!`,
+    data: {
+      type: 'new_match',
+      matchUserId: String(matchUserId || ''),
+      matchName: name,
+      matchPhoto: String(matchPhoto || ''),
+    },
+  });
+}
+
+module.exports = { sendExpoPush, sendNewChatMessagePush, sendNewMatchPush, isExpoPushToken };
