@@ -82,7 +82,7 @@ const TEST_ACCOUNTS = [
     age: 32,
     gender: 'Male',
     profession: 'Software Engineer',
-    company: 'LinkedUp QA',
+    company: 'MatchedIn QA',
     city: 'Bengaluru',
     bio: 'QA account — interested in everyone, Bengaluru.',
     photo_url: IMG.m1,

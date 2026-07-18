@@ -65,6 +65,15 @@ module.exports = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_passes_user ON passes(user_id)`,
 
+  `CREATE TABLE IF NOT EXISTS swipe_limit_states (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    swipe_count INTEGER NOT NULL DEFAULT 0,
+    reset_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (swipe_count >= 0)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_swipe_limit_reset ON swipe_limit_states(reset_at)`,
+
   `CREATE TABLE IF NOT EXISTS matches (
     id BIGSERIAL PRIMARY KEY,
     user_id_1 TEXT NOT NULL REFERENCES users(id),
@@ -125,4 +134,20 @@ module.exports = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS idx_reports_reported ON user_reports(reported_id)`,
+
+  `CREATE TABLE IF NOT EXISTS subscriptions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    plan TEXT NOT NULL,
+    product_id TEXT,
+    source TEXT,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    is_active SMALLINT NOT NULL DEFAULT 1,
+    revenuecat_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_subscriptions_active ON subscriptions(user_id, expires_at)`,
 ];

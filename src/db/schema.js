@@ -1,5 +1,5 @@
 /**
- * LinkedUp DB schema (SQLite)
+ * MatchedIn DB schema (SQLite)
  * Run via: npm run init-db
  */
 
@@ -67,6 +67,17 @@ CREATE TABLE IF NOT EXISTS passes (
 );
 CREATE INDEX IF NOT EXISTS idx_passes_user ON passes(user_id);
 
+-- Per-user swipe allowance. The 24-hour lock starts when the allowance is exhausted.
+CREATE TABLE IF NOT EXISTS swipe_limit_states (
+  user_id TEXT PRIMARY KEY,
+  swipe_count INTEGER NOT NULL DEFAULT 0,
+  reset_at TEXT,
+  updated_at TEXT DEFAULT (datetime('now')),
+  CHECK (swipe_count >= 0),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_swipe_limit_reset ON swipe_limit_states(reset_at);
+
 -- Matches (mutual likes) – one row per pair, ordered by id
 CREATE TABLE IF NOT EXISTS matches (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,6 +129,22 @@ CREATE TABLE IF NOT EXISTS conversation_reads (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_conv_reads_user ON conversation_reads(user_id);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  plan TEXT NOT NULL,
+  product_id TEXT,
+  source TEXT,
+  started_at TEXT DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  revenuecat_id TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
 `;
 
 module.exports = { schema };

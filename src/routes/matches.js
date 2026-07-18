@@ -6,13 +6,23 @@ const { toUserJson } = require('../utils/userJson');
 const { getBlockedUserIds, isBlockedEitherWay } = require('../utils/blocks');
 const { removeMatchAndChat, ensurePass } = require('../utils/matchCleanup');
 const { notifyUserOfNewMatch } = require('../utils/matchNotify');
-const { checkDailySwipeLimit } = require('../utils/dailySwipeLimit');
-
-router.use(authMiddleware);
+const { checkDailySwipeLimit, recordSwipe, MAX_DAILY_SWIPES } = require('../utils/dailySwipeLimit');
+const { hasUnlimitedSwipes } = require('../utils/subscriptionUtils');
 
 async function swipeLimitFor(userId) {
+  if (await hasUnlimitedSwipes(userId, getOne)) {
+    return {
+      total: 0,
+      remaining: MAX_DAILY_SWIPES,
+      resetAt: null,
+      maxDaily: MAX_DAILY_SWIPES,
+      unlimited: true,
+    };
+  }
   return checkDailySwipeLimit(userId, getOne);
 }
+
+router.use(authMiddleware);
 
 // Map "interested in" labels to DB gender values
 const INTERESTED_TO_GENDER = {
@@ -88,7 +98,7 @@ router.get('/recommendations', async (req, res, next) => {
     if (limit.remaining <= 0) {
       return res
         .status(429)
-        .json({ message: 'Daily swipe limit reached', limitReached: true, resetAt: limit.resetAt });
+        .json({ message: 'Swipe limit reached', limitReached: true, resetAt: limit.resetAt });
     }
     const me = await getOne(
       'SELECT interested_in, latitude, longitude, profession FROM users WHERE id = ?',
@@ -383,15 +393,16 @@ router.get('/recommendations', async (req, res, next) => {
   }
 });
 
-// GET /matches/swipe-limit-status - current user's daily swipe usage + block status
+// GET /matches/swipe-limit-status - current user's swipe allowance + 24-hour block status
 router.get('/swipe-limit-status', async (req, res, next) => {
   try {
     const limit = await swipeLimitFor(req.userId);
     res.json({
       total: limit.total,
       remaining: limit.remaining,
-      limitReached: limit.remaining <= 0,
+      limitReached: limit.unlimited ? false : limit.remaining <= 0,
       resetAt: limit.resetAt,
+      unlimited: Boolean(limit.unlimited),
     });
   } catch (e) {
     next(e);
@@ -422,13 +433,16 @@ router.post('/like', async (req, res, next) => {
     if (limit.remaining <= 0) {
       return res
         .status(429)
-        .json({ message: 'Daily swipe limit reached', limitReached: true, resetAt: limit.resetAt });
+        .json({ message: 'Swipe limit reached', limitReached: true, resetAt: limit.resetAt });
     }
 
-    await run(
+    const insertedLike = await run(
       'INSERT INTO likes (user_id, target_user_id, type) VALUES (?, ?, ?) ON CONFLICT (user_id, target_user_id) DO NOTHING',
       [req.userId, targetUserId, 'like'],
     );
+    const updatedLimit = insertedLike.changes > 0
+      ? await recordSwipe(req.userId, getOne)
+      : limit;
 
     const mutual = await getOne('SELECT 1 AS x FROM likes WHERE user_id = ? AND target_user_id = ?', [
       targetUserId,
@@ -452,7 +466,15 @@ router.post('/like', async (req, res, next) => {
         await notifyUserOfNewMatch(req, req.userId, targetUserId);
       }
     }
-    res.json({ success: true, isMatch });
+    res.json({
+      success: true,
+      isMatch,
+      swipeLimit: {
+        remaining: updatedLimit.remaining,
+        limitReached: updatedLimit.remaining <= 0,
+        resetAt: updatedLimit.resetAt,
+      },
+    });
   } catch (e) {
     next(e);
   }
@@ -467,65 +489,24 @@ router.post('/pass', async (req, res, next) => {
     if (limit.remaining <= 0) {
       return res
         .status(429)
-        .json({ message: 'Daily swipe limit reached', limitReached: true, resetAt: limit.resetAt });
+        .json({ message: 'Swipe limit reached', limitReached: true, resetAt: limit.resetAt });
     }
 
-    await run(
+    const insertedPass = await run(
       'INSERT INTO passes (user_id, target_user_id) VALUES (?, ?) ON CONFLICT (user_id, target_user_id) DO NOTHING',
       [req.userId, targetUserId],
     );
-    res.json({ success: true });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// POST /matches/super-like
-router.post('/super-like', async (req, res, next) => {
-  try {
-    const { userId: targetUserId } = req.body;
-    if (!targetUserId) return res.status(400).json({ message: 'userId required' });
-    if (targetUserId === req.userId) return res.status(400).json({ message: 'Cannot super-like yourself' });
-    if (await isBlockedEitherWay(req.userId, targetUserId)) {
-      return res.status(403).json({ message: 'Cannot interact with this user' });
-    }
-
-    const limit = await swipeLimitFor(req.userId);
-    if (limit.remaining <= 0) {
-      return res
-        .status(429)
-        .json({ message: 'Daily swipe limit reached', limitReached: true, resetAt: limit.resetAt });
-    }
-
-    await run(
-      `INSERT INTO likes (user_id, target_user_id, type) VALUES (?, ?, ?)
-       ON CONFLICT (user_id, target_user_id) DO UPDATE SET type = EXCLUDED.type, created_at = NOW()`,
-      [req.userId, targetUserId, 'super_like'],
-    );
-
-    const mutual = await getOne('SELECT 1 AS x FROM likes WHERE user_id = ? AND target_user_id = ?', [
-      targetUserId,
-      req.userId,
-    ]);
-    let isMatch = false;
-    if (mutual) {
-      const u1 = req.userId < targetUserId ? req.userId : targetUserId;
-      const u2 = req.userId < targetUserId ? targetUserId : req.userId;
-      const insMatch = await query(
-        'INSERT INTO matches (user_id_1, user_id_2) VALUES (?, ?) ON CONFLICT (user_id_1, user_id_2) DO NOTHING RETURNING id',
-        [u1, u2],
-      );
-      const convId = `conv_${u1}_${u2}`;
-      await run(
-        'INSERT INTO conversations (id, user_id_1, user_id_2) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING',
-        [convId, u1, u2],
-      );
-      isMatch = true;
-      if (insMatch.rowCount > 0) {
-        await notifyUserOfNewMatch(req, req.userId, targetUserId);
-      }
-    }
-    res.json({ success: true, isMatch });
+    const updatedLimit = insertedPass.changes > 0
+      ? await recordSwipe(req.userId, getOne)
+      : limit;
+    res.json({
+      success: true,
+      swipeLimit: {
+        remaining: updatedLimit.remaining,
+        limitReached: updatedLimit.remaining <= 0,
+        resetAt: updatedLimit.resetAt,
+      },
+    });
   } catch (e) {
     next(e);
   }

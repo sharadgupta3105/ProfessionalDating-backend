@@ -5,6 +5,7 @@ const router = express.Router();
 const { getOne, run, all } = require('../db/connection');
 const { authMiddleware } = require('../middleware/auth');
 const { toUserJson } = require('../utils/userJson');
+const { sendExpoPush, isExpoPushToken, getPushReceipts, extractTicketIds, receiptDeliveryHint, formatReceiptSummary } = require('../utils/expoPush');
 const { blockUser, isBlockedEitherWay } = require('../utils/blocks');
 const { removeMatchAndChat, ensurePass } = require('../utils/matchCleanup');
 
@@ -117,6 +118,53 @@ router.post('/me/push-token', async (req, res, next) => {
     });
   } catch (e) {
     next(e);
+  }
+});
+
+router.post('/me/push-test', async (req, res, next) => {
+  try {
+    const row = await getOne('SELECT expo_push_token FROM users WHERE id = ?', [req.userId]);
+    const token = row?.expo_push_token;
+    if (!token || !isExpoPushToken(token)) {
+      return res.status(400).json({
+        message:
+          'No Expo push token saved for this account. Open Settings → Push notifications → Register again (requires a preview/production build, not Expo Go).',
+      });
+    }
+    const result = await sendExpoPush({
+      to: token,
+      title: 'MatchedIn test',
+      body: 'If you see this with the app closed, push notifications are working.',
+      data: { type: 'push_test' },
+    });
+    const ticketIds = extractTicketIds(result);
+    const { receipts, pending, errors } = await getPushReceipts(ticketIds);
+    const deliveryHint = receiptDeliveryHint(receipts);
+    if (deliveryHint) {
+      return res.status(502).json({
+        message: deliveryHint,
+        receipts,
+        ticketIds,
+      });
+    }
+    res.json({
+      ok: true,
+      result,
+      receipts,
+      receiptSummary: formatReceiptSummary(receipts),
+      pending: Boolean(pending),
+      errors,
+      hint: pending
+        ? 'Expo accepted the push; delivery still pending. Force-close the app from recents, wait 10s, check notification tray.'
+        : `Expo → FCM delivery: ${formatReceiptSummary(receipts)}. Force-close app from recents, wait 10s, check tray.`,
+    });
+  } catch (e) {
+    const msg = e?.message || 'Push test failed';
+    const hint =
+      e?.expoPushError === 'InvalidCredentials' || /fcm|credential/i.test(msg)
+        ? 'Upload FCM V1 credentials in expo.dev → Project → Credentials → Android (see mobile/PUSH_NOTIFICATIONS_SETUP.md).'
+        : undefined;
+    res.status(502).json({ message: msg, expoPushError: e?.expoPushError, hint });
   }
 });
 

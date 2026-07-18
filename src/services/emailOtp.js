@@ -31,7 +31,7 @@ function buildOtpEmailHtml(code) {
  */
 async function sendLoginOtpEmail({ to, code }) {
   const apiKey = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.OTP_FROM_EMAIL?.trim() || 'LinkedUp <onboarding@resend.dev>';
+  const from = process.env.OTP_FROM_EMAIL?.trim() || 'MatchedIn <onboarding@resend.dev>';
 
   if (!apiKey) {
     const err = new Error(

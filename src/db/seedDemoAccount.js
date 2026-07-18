@@ -43,7 +43,7 @@ async function seedDemoAccount() {
       28,
       'Female',
       'Product Manager',
-      'LinkedUp',
+      'MatchedIn',
       'Bengaluru',
       'Official demo account for testing swipes, matches, and chat.',
       PHOTO,

@@ -5,7 +5,7 @@ const APP_REGION = (process.env.APP_REGION || 'IN').toUpperCase();
 
 const isIndia = APP_REGION === 'IN';
 
-/** Daily swipe limit resets at midnight in this timezone. */
+/** Regional timezone for date/time behavior outside the rolling swipe limit. */
 const APP_TIMEZONE = process.env.APP_TIMEZONE || (isIndia ? 'Asia/Kolkata' : 'UTC');
 
 /** Major Indian cities for backfill / geocoding (lowercase keys). Includes Bengaluru + Bangalore. */

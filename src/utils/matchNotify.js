@@ -1,23 +1,33 @@
 const { getOne, run } = require('../db/connection');
+const { primaryPhotoUrl } = require('./userJson');
 const { sendNewMatchPush } = require('./expoPush');
 const { shouldSkipRemotePush } = require('./appPresence');
 const { isUserSocketConnected } = require('../socket/chatSocket');
+
+function primaryPhotoFromRow(row) {
+  return primaryPhotoUrl(row) || '';
+}
 
 /**
  * Notify the user who liked first when the other person likes back (new mutual match).
  */
 async function notifyUserOfNewMatch(req, matcherUserId, recipientUserId) {
-  const matcher = await getOne('SELECT name, photo_url FROM users WHERE id = ?', [matcherUserId]);
+  const matcher = await getOne('SELECT name, photo_url, photo_urls FROM users WHERE id = ?', [matcherUserId]);
   const recipient = await getOne(
     'SELECT expo_push_token, app_in_foreground, app_presence_updated_at FROM users WHERE id = ?',
     [recipientUserId],
   );
 
+  const u1 = matcherUserId < recipientUserId ? matcherUserId : recipientUserId;
+  const u2 = matcherUserId < recipientUserId ? recipientUserId : matcherUserId;
+  const conversationId = `conv_${u1}_${u2}`;
+
   const payload = {
     fromUserId: String(matcherUserId),
     matchUserId: String(matcherUserId),
     matchName: matcher?.name || 'Someone',
-    matchPhoto: matcher?.photo_url || '',
+    matchPhoto: primaryPhotoFromRow(matcher),
+    conversationId,
   };
 
   const io = req.app.get('io');
@@ -38,6 +48,7 @@ async function notifyUserOfNewMatch(req, matcherUserId, recipientUserId) {
       matcherName: payload.matchName,
       matchUserId: payload.matchUserId,
       matchPhoto: payload.matchPhoto,
+      conversationId: payload.conversationId,
     })
       .then((resPush) => {
         if (process.env.DEBUG_PUSH === '1') {

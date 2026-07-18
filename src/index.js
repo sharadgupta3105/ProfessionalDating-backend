@@ -12,6 +12,7 @@ const authRoutes = require('./routes/auth');
 const usersRoutes = require('./routes/users');
 const matchesRoutes = require('./routes/matches');
 const chatsRoutes = require('./routes/chats');
+const subscriptionsRoutes = require('./routes/subscriptions');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -36,6 +37,7 @@ app.use('/auth', authRoutes);
 app.use('/users', usersRoutes);
 app.use('/matches', matchesRoutes);
 app.use('/chats', chatsRoutes);
+app.use('/subscriptions', subscriptionsRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -110,7 +112,7 @@ async function start() {
   await maybeSeedPromatchTestAccounts();
   server.listen(PORT, '0.0.0.0', () => {
     // eslint-disable-next-line no-console
-    console.log(`LinkedUp API + Socket.io at http://localhost:${PORT}`);
+    console.log(`MatchedIn API + Socket.io at http://localhost:${PORT}`);
     // eslint-disable-next-line no-console
     console.log(`CORS / socket origins: ${allowAllOrigins ? '*' : corsOrigins.join(', ')}`);
   });

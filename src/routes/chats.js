@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getOne, all, run } = require('../db/connection');
 const { authMiddleware } = require('../middleware/auth');
-const { toUserJson } = require('../utils/userJson');
+const { toUserJson, primaryPhotoUrl } = require('../utils/userJson');
 const { randomUUID } = require('crypto');
 const { resolveConversationId } = require('../utils/conversation');
 const { sendNewChatMessagePush } = require('../utils/expoPush');
@@ -57,7 +57,7 @@ router.get('/', async (req, res, next) => {
         id: c.id,
         otherUser: toUserJson(other),
         name: other?.name,
-        imageUrl: other?.photo_url,
+        imageUrl: toUserJson(other)?.imageUrl,
         lastMessage: lastMsg?.text ?? null,
         time: lastMsg?.created_at ?? c.created_at,
         unreadCount,
@@ -158,7 +158,7 @@ router.post('/:chatId/messages', async (req, res, next) => {
     const row = await getOne('SELECT * FROM messages WHERE id = ?', [id]);
 
     const recipientId = conv.user_id_1 === req.userId ? conv.user_id_2 : conv.user_id_1;
-    const senderRow = await getOne('SELECT name FROM users WHERE id = ?', [req.userId]);
+    const senderRow = await getOne('SELECT name, photo_url, photo_urls FROM users WHERE id = ?', [req.userId]);
     const recipientRow = await getOne(
       'SELECT expo_push_token, app_in_foreground, app_presence_updated_at FROM users WHERE id = ?',
       [recipientId],
@@ -204,6 +204,7 @@ router.post('/:chatId/messages', async (req, res, next) => {
           textPreview: text.trim(),
           conversationId: conv.id,
           senderId: req.userId,
+          senderImageUrl: primaryPhotoUrl(senderRow) || '',
         })
           .then((resPush) => {
             if (process.env.DEBUG_PUSH === '1') {

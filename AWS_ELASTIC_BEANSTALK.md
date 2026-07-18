@@ -1,4 +1,4 @@
-# AWS Elastic Beanstalk — LinkedUp API (Mumbai)
+# AWS Elastic Beanstalk — MatchedIn API (Mumbai)
 
 Environment URL: `http://promatch-api-env.eba-rt5gymna.ap-south-1.elasticbeanstalk.com`
 
@@ -38,7 +38,7 @@ Set in **Elastic Beanstalk → Configuration → Software → Environment proper
 | Name | Value |
 |------|--------|
 | `RESEND_API_KEY` | `re_...` from [resend.com](https://resend.com) |
-| `OTP_FROM_EMAIL` | `LinkedUp <onboarding@resend.dev>` (test) or `LinkedUp <noreply@yourdomain.com>` |
+| `OTP_FROM_EMAIL` | `MatchedIn <onboarding@resend.dev>` (test) or `MatchedIn <noreply@yourdomain.com>` |
 
 See **`backend/OTP_EMAIL_SETUP.md`**. Remove `OTP_FIXED_CODE` when email OTP is working.
 

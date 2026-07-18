@@ -1,3 +1,14 @@
+function primaryPhotoUrl(row) {
+  if (!row) return null;
+  if (row.photo_url) return row.photo_url;
+  try {
+    const urls = row.photo_urls ? JSON.parse(row.photo_urls) : [];
+    return Array.isArray(urls) && urls[0] ? urls[0] : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 function toUserJson(row, options = {}) {
   if (!row) return null;
   const self = Boolean(options.self);
@@ -66,4 +77,4 @@ function toUserJson(row, options = {}) {
   return base;
 }
 
-module.exports = { toUserJson };
+module.exports = { toUserJson, primaryPhotoUrl };

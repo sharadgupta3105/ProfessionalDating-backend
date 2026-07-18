@@ -1,7 +1,7 @@
 {
   "name": "promatch-backend",
   "version": "1.0.0",
-  "description": "LinkedUp dating app API - auth, users, matches, chat",
+  "description": "MatchedIn dating app API - auth, users, matches, chat",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

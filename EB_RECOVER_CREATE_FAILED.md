@@ -60,7 +60,7 @@ Upload **promatch-backend.zip** when creating the environment, or after create: 
 | `DEMO_LOGIN_EMAIL` | `demo@linkedup.app` |
 | `DEMO_LOGIN_OTP` | `123456` |
 | `RESEND_API_KEY` | your key (optional) |
-| `OTP_FROM_EMAIL` | `LinkedUp <onboarding@resend.dev>` |
+| `OTP_FROM_EMAIL` | `MatchedIn <onboarding@resend.dev>` |
 | `LINKEDIN_CLIENT_ID` | … |
 | `LINKEDIN_CLIENT_SECRET` | … |
 | `LINKEDIN_OAUTH_CALLBACK_URL` | `http://<NEW-EB-URL>/auth/linkedin/callback` |

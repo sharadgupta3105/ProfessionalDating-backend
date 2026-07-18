@@ -1,6 +1,6 @@
-# LinkedUp Backend
+# MatchedIn Backend
 
-Node.js + Express API for the LinkedUp dating app. Uses **PostgreSQL** (recommended: [Supabase](https://supabase.com) free tier) via **`DATABASE_URL`** and **JWT** for auth.
+Node.js + Express API for the MatchedIn dating app. Uses **PostgreSQL** (recommended: [Supabase](https://supabase.com) free tier) via **`DATABASE_URL`** and **JWT** for auth.
 
 ---
 
@@ -46,7 +46,6 @@ Schema is applied on **`npm run init-db`** and on server start (`initDb()` in `s
 | GET | `/matches/recommendations` | Yes | Users to swipe (excludes liked/passed) |
 | POST | `/matches/like` | Yes | Body: `{ userId }` – like; response may include `isMatch` |
 | POST | `/matches/pass` | Yes | Body: `{ userId }` – pass |
-| POST | `/matches/super-like` | Yes | Body: `{ userId }` – super-like; response may include `isMatch` |
 | GET | `/matches` | Yes | List mutual matches |
 | GET | `/chats` | Yes | List conversations (with last message + other user) |
 | GET | `/chats/:chatId/messages` | Yes | Messages; `chatId` can be conversation id or other user id |
@@ -66,7 +65,7 @@ JWT_SECRET=your-super-secret-key-change-in-production
 FRONTEND_URL=http://localhost:8081
 # Email OTP (Resend) — see OTP_EMAIL_SETUP.md
 # RESEND_API_KEY=re_xxxxx
-# OTP_FROM_EMAIL=LinkedUp <onboarding@resend.dev>
+# OTP_FROM_EMAIL=MatchedIn <onboarding@resend.dev>
 ```
 
 - **DATABASE_URL** – Required. Supabase URI from the dashboard (pooler or direct connection).

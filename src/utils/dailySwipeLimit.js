@@ -1,52 +1,74 @@
-const { APP_TIMEZONE } = require('../config/region');
-
 const MAX_DAILY_SWIPES = 10;
+const LOCK_HOURS = 24;
 
-function escapeTz(tz) {
-  return String(tz || 'UTC').replace(/'/g, "''");
+function toLimitResult(row) {
+  const total = Math.max(0, Number(row?.swipe_count ?? 0));
+  const resetAt = row?.reset_at ? new Date(row.reset_at).toISOString() : null;
+  return {
+    total,
+    remaining: Math.max(0, MAX_DAILY_SWIPES - total),
+    resetAt,
+    maxDaily: MAX_DAILY_SWIPES,
+  };
 }
 
 /**
- * Next midnight in APP_TIMEZONE (when daily swipe counts reset).
- * Stable across API calls — not "now + 24h".
+ * Return the current allowance. An expired lock starts a fresh allowance;
+ * unlike the old calendar-day implementation, midnight has no effect.
  */
-async function getDailyResetAt(getOne) {
-  const tz = escapeTz(APP_TIMEZONE);
-  const row = await getOne(
-    `SELECT (
-      (((NOW() AT TIME ZONE '${tz}')::date + interval '1 day')::timestamp) AT TIME ZONE '${tz}'
-    ) AS reset_at`,
-    [],
+async function checkDailySwipeLimit(userId, getOne) {
+  let row = await getOne(
+    'SELECT swipe_count, reset_at FROM swipe_limit_states WHERE user_id = ?',
+    [userId],
   );
-  if (row?.reset_at) {
-    return new Date(row.reset_at).toISOString();
+
+  if (row?.reset_at && new Date(row.reset_at).getTime() <= Date.now()) {
+    row = await getOne(
+      `UPDATE swipe_limit_states
+       SET swipe_count = 0, reset_at = NULL, updated_at = NOW()
+       WHERE user_id = ?
+       RETURNING swipe_count, reset_at`,
+      [userId],
+    );
   }
-  const fallback = new Date();
-  fallback.setUTCHours(24, 0, 0, 0);
-  return fallback.toISOString();
+
+  return toLimitResult(row);
 }
 
-/** Count likes + passes for the current calendar day in APP_TIMEZONE. */
-async function checkDailySwipeLimit(userId, getOne) {
-  const tz = escapeTz(APP_TIMEZONE);
-  const likeRow = await getOne(
-    `SELECT COUNT(*)::int AS c FROM likes WHERE user_id = ? AND (created_at AT TIME ZONE '${tz}')::date = (NOW() AT TIME ZONE '${tz}')::date`,
-    [userId],
+/**
+ * Consume one successful swipe. The 24-hour lock is created exactly when
+ * swipe_count reaches the allowance, and remains stable until it expires.
+ */
+async function recordSwipe(userId, getOne) {
+  const row = await getOne(
+    `INSERT INTO swipe_limit_states (user_id, swipe_count, reset_at, updated_at)
+     VALUES (?, 1, NULL, NOW())
+     ON CONFLICT (user_id) DO UPDATE SET
+       swipe_count = CASE
+         WHEN swipe_limit_states.reset_at IS NOT NULL
+           AND swipe_limit_states.reset_at <= NOW() THEN 1
+         ELSE LEAST(swipe_limit_states.swipe_count + 1, ?)
+       END,
+       reset_at = CASE
+         WHEN swipe_limit_states.reset_at IS NOT NULL
+           AND swipe_limit_states.reset_at > NOW()
+           THEN swipe_limit_states.reset_at
+         WHEN swipe_limit_states.reset_at IS NOT NULL
+           AND swipe_limit_states.reset_at <= NOW()
+           THEN NULL
+         WHEN swipe_limit_states.swipe_count + 1 >= ?
+           THEN NOW() + interval '${LOCK_HOURS} hours'
+         ELSE NULL
+       END,
+       updated_at = NOW()
+     RETURNING swipe_count, reset_at`,
+    [userId, MAX_DAILY_SWIPES, MAX_DAILY_SWIPES],
   );
-  const passRow = await getOne(
-    `SELECT COUNT(*)::int AS c FROM passes WHERE user_id = ? AND (created_at AT TIME ZONE '${tz}')::date = (NOW() AT TIME ZONE '${tz}')::date`,
-    [userId],
-  );
-  const likeCount = Number(likeRow?.c ?? 0);
-  const passCount = Number(passRow?.c ?? 0);
-  const total = likeCount + passCount;
-  const remaining = Math.max(0, MAX_DAILY_SWIPES - total);
-  const resetAt = await getDailyResetAt(getOne);
-  return { total, remaining, resetAt, maxDaily: MAX_DAILY_SWIPES };
+  return toLimitResult(row);
 }
 
 module.exports = {
   MAX_DAILY_SWIPES,
-  getDailyResetAt,
   checkDailySwipeLimit,
+  recordSwipe,
 };

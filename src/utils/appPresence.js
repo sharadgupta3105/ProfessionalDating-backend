@@ -11,9 +11,14 @@ function recipientLikelyInForeground(row) {
   return age >= 0 && age < MAX_PRESENCE_AGE_MS;
 }
 
-/** Skip push only when the app is actively open *and* still connected over Socket.io. */
+/**
+ * Skip remote push only when the recipient is actively in-app with a live socket.
+ * Explicit background or stale presence must never block push (e.g. after force-quit).
+ */
 function shouldSkipRemotePush(recipientRow, recipientId, isSocketConnected) {
-  return recipientLikelyInForeground(recipientRow) && Boolean(isSocketConnected(recipientId));
+  if (recipientRow && Number(recipientRow.app_in_foreground) === 0) return false;
+  if (!isSocketConnected(recipientId)) return false;
+  return recipientLikelyInForeground(recipientRow);
 }
 
 module.exports = {
